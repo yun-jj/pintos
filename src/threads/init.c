@@ -72,6 +72,8 @@ static void locate_block_device (enum block_type, const char *name);
 
 int pintos_init (void) NO_RETURN;
 
+static void tiny_shell(void);
+
 /* Pintos main entry point. */
 int
 pintos_init (void)
@@ -134,6 +136,7 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    tiny_shell();    
   }
 
   /* Finish up. */
@@ -279,6 +282,47 @@ parse_options (char **argv)
   random_init (rtc_get_time ());
   
   return argv;
+}
+
+/* Tiny shell function */
+
+static void
+tiny_shell(void)
+{
+  char buf[64];
+
+  while (true)
+  {
+    printf("PKUOS> ");
+
+    for (int i = 0; 64 > i; i++)
+    {
+      uint8_t tmp = input_getc();
+
+      if (i < 64)
+      {
+        buf[i] = (char) tmp;
+        putchar((char) tmp);
+      }
+
+      if ((char) tmp == '\r')
+      {
+        if (i + 1 < 64)
+          buf[i + 1] = '\0';
+
+        if (!strcmp(buf, "whoami\r"))
+          printf("ID:202106040237\n");
+        else if (!strcmp(buf, "exit\r"))
+        {
+          printf("\n");
+          return;
+        }
+        else
+          printf("invalid command\n");
+        break;
+      }
+    }
+  }
 }
 
 /* Runs the task specified in ARGV[1]. */
@@ -430,4 +474,5 @@ locate_block_device (enum block_type role, const char *name)
       block_set_role (role, block);
     }
 }
+
 #endif
