@@ -35,11 +35,11 @@ download_and_check()
   echo "Downloaded and verified $fname from $1"
   if [ ! -d $fdirname ]; then
     echo "Extracting $fname to $fdirname..."
-    if [ $fname == *.tar.gz ]; then
+    if [[ $fname == *.tar.gz ]]; then
       tar xzf $fname 
-    elif [ $fname == *.tar.bz2 ]; then
+    elif [[ $fname == *.tar.bz2 ]]; then
       tar xjf $fname
-    elif [ $fname == *.tar.xz ]; then
+    elif [[ $fname == *.tar.xz ]]; then
       tar xJf $fname
     else
       perror "Unrecognized archive extension $fname"
@@ -80,6 +80,7 @@ if [ $# -eq 0 ]; then
   exit 1
 fi
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PREFIX=
 ARGS=""
 while (( "$#" )); do
@@ -151,9 +152,23 @@ if [ $tool == "all" -o $tool == "gcc" ]; then
   if [ ! -d $CWD/src/gcc-6.2.0/mpfr ]; then
     cd $CWD/src/gcc-6.2.0 && contrib/download_prerequisites || perror "Failed to download pre-requisite for GCC"
   fi
+  echo "Patching GCC..."
+  # Fix a number of bugs that would fail the build on recent macOS environment
+  pushd $CWD/src/gcc-6.2.0
+  cat $SCRIPT_DIR/gcc-6.2.0-ubsan.patch | patch -p2
+  cat $SCRIPT_DIR/gcc-6.2.0-gmp-configure.patch | patch -p2
+  cat $SCRIPT_DIR/gcc-6.2.0-genconditions.patch | patch -p2
+  # macOS file system is case-insensitive, so the VERSION file will be treated
+  # as 'version' and cause a cascading chain of nasty issues during GCC build..
+  [ -f mpfr/VERSION ] && mv mpfr/VERSION mpfr/VERSION_
+  popd
 fi
 if [ $tool == "all" -o $tool == "gdb" ]; then
-  download_and_check https://ftp.gnu.org/gnu/gdb/gdb-7.9.1.tar.xz cd9c543a411a05b2b647dd38936034b68c2b5d6f10e0d51dc168c166c973ba40
+  download_and_check https://ftp.gnu.org/gnu/gdb/gdb-7.12.1.tar.xz 4607680b973d3ec92c30ad029f1b7dbde3876869e6b3a117d8a7e90081113186
+  echo "Patching GDB..."
+  pushd $CWD/src/gdb-7.12.1
+  cat $SCRIPT_DIR/gdb-7.12.1-python.patch | patch -p2
+  popd
 fi
 
 if [ $tool == "all" -o $tool == "binutils" ]; then
@@ -170,7 +185,7 @@ if [ $tool == "all" -o $tool == "gcc" ]; then
   mkdir -p $CWD/build/gcc && cd $CWD/build/gcc 
   ../../src/gcc-6.2.0/configure CXXFLAGS="-fpermissive" --prefix=$PREFIX --target=$TARGET \
     --disable-multilib --disable-nls --disable-werror --disable-libssp \
-    --disable-libmudflap --with-newlib --without-headers --enable-languages=c,c++ || perror "Failed to configure gcc"
+    --disable-libmudflap --with-newlib --without-headers --enable-languages=c || perror "Failed to configure gcc"
   make -j8 all-gcc  || perror "Failed to make gcc"
   make install-gcc
   make all-target-libgcc || perror "Failed to libgcc"
@@ -180,7 +195,7 @@ fi
 if [ $tool == "all" -o $tool == "gdb" ]; then
   echo "Building gdb..."
   mkdir -p $CWD/build/gdb && cd $CWD/build/gdb 
-  ../../src/gdb-7.9.1/configure --prefix=$PREFIX --target=$TARGET --disable-werror || perror "Failed to configure gdb"
+  ../../src/gdb-7.12.1/configure CFLAGS="-Wno-implicit-function-declaration" --prefix=$PREFIX --target=$TARGET --disable-werror --with-python=no || perror "Failed to configure gdb"
   make -j8 || perror "Failed to make gdb"
   make install
 fi
