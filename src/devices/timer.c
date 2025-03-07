@@ -94,17 +94,18 @@ void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-  int64_t wake_ticks = start + ticks;
-
   ASSERT (intr_get_level () == INTR_ON);
-  
+
+  enum intr_level old_level = intr_disable();
+
+  int64_t wake_ticks = start + ticks;
   struct thread *cur = thread_current();
 
   list_push_back(&sleep_list, &cur->sleep_elem);
   cur->wake_ticks = wake_ticks;
 
-  intr_disable();
   thread_block();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -184,6 +185,21 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+  if (thread_mlfqs)
+  {
+    add_cur_thread_recent_cpu_by_one();
+    /* Per second update */
+    if (ticks % TIMER_FREQ == 0)
+    {
+      update_load_avg();
+      update_recent_cpu();
+    }
+
+    /* Every fourth tick update */
+    if (ticks % 4 == 0)
+      update_priority(thread_current());
+  }
+
   struct list_elem *e = list_begin(&sleep_list);
  
   while (e != list_end(&sleep_list))
@@ -191,13 +207,15 @@ timer_interrupt (struct intr_frame *args UNUSED)
     struct thread *t = list_entry(e, struct thread, sleep_elem);
     if (ticks >= t->wake_ticks)
     {
+      t->wake_ticks = -1;
       e = list_remove(e);
       thread_unblock(t);
+      if (thread_current()->priority < t->priority)
+        intr_yield_on_return();
     }
     else
       e = list_next(e);
   }
-
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
