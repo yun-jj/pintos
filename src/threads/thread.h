@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -27,6 +28,22 @@ typedef int tid_t;
 #define NICE_MIN -20                     /* Lowest niceness*/
 #define NICE_DEFAULT 0                   /* Default niceness*/
 #define NICE_MAX 20                      /* Highest niceness*/
+
+struct thread_file
+{
+   int fd;
+   struct file* file;
+   struct list_elem file_elem;
+};
+
+struct child
+{
+   tid_t tid;
+   bool isrun;
+   struct list_elem child_elem;
+   struct semaphore sema;
+   int store_exit;
+};
 
 /* A kernel thread or user process.
 
@@ -104,6 +121,14 @@ struct thread
 
     struct list holder_locks;            /* Thread holder locks */
     struct lock *required_lock;          /* Want holder lock */
+    struct list childs;
+    struct child *thread_child;
+    int st_exit;
+    struct semaphore sema;
+    bool success;
+    struct thread *parent;
+    struct list files;
+    int max_file_fd;  
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -162,4 +187,6 @@ void update_priority(struct thread *t);
 void update_ready_threads(void);
 void add_cur_thread_recent_cpu_by_one(void);
 
+void acquire_lock_f();
+void release_lock_f();
 #endif /* threads/thread.h */

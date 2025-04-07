@@ -43,6 +43,10 @@ static int ready_threads;
 /* System load average. */
 static int load_avg;
 
+static bool schedule_start;
+
+static struct lock lock_f;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -97,10 +101,12 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  lock_init(&lock_f);
   list_init (&ready_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
+  schedule_start = false;
   initial_thread = running_thread ();
   init_thread (initial_thread, NICE_DEFAULT, "main", PRI_DEFAULT, 0);
   initial_thread->status = THREAD_RUNNING;
@@ -112,6 +118,7 @@ thread_init (void)
 void
 thread_start (void) 
 {
+  schedule_start = true;
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
@@ -192,6 +199,14 @@ thread_create (const char *name, int priority,
   init_thread (t, father_thread->niceness, name,
                priority, father_thread->recent_cpu);
   tid = t->tid = allocate_tid ();
+
+  t->thread_child = malloc(sizeof(struct child));
+  t->thread_child->tid = tid;
+  sema_init(&t->thread_child->sema, 0);
+  list_push_back(&thread_current()->childs, &t->thread_child->child_elem);
+
+  t->thread_child->store_exit = UINT32_MAX;
+  t->thread_child->isrun = false;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -300,6 +315,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+  printf ("%s: exit(%d)\n",thread_name(), thread_current()->st_exit);
   process_exit ();
 #endif
 
@@ -318,6 +334,8 @@ thread_exit (void)
 void
 thread_yield (void) 
 {
+  if (!schedule_start)
+    return;
   struct thread *cur = thread_current ();
   enum intr_level old_level;
   
@@ -505,10 +523,22 @@ init_thread (struct thread *t, int niceness, const char *name,
   t->recent_cpu = recent_cpu;
   t->magic = THREAD_MAGIC;
   t->required_lock = NULL;
+  t->max_file_fd = 2;
   /* -1 meaning not accept priority donate */
   t->original_priority = -1;
   t->wake_ticks = -1;
   list_init(&t->holder_locks);
+  list_init(&t->files);
+
+  if (t == initial_thread)
+    t->parent = NULL;
+  else
+    t->parent = thread_current();
+
+  list_init(&t->childs);
+  sema_init(&t->sema, 0);
+  t->success = true;
+  t->st_exit = UINT32_MAX;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -707,6 +737,18 @@ struct thread *max_priority_ready_thread(void)
     return NULL;
   else
     return list_entry (list_back(&ready_list), struct thread, elem);
+}
+
+void
+acquire_lock_f ()
+{
+  lock_acquire(&lock_f);
+}
+
+void 
+release_lock_f ()
+{
+  lock_release(&lock_f);
 }
 
 bool than_priority_func(const struct list_elem *a,

@@ -132,7 +132,10 @@ sema_up (struct semaphore *sema)
   }
   sema->value++;
   intr_set_level (old_level);
-  thread_yield();
+  if (intr_context())
+    intr_yield_on_return();
+  else
+    thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
@@ -310,7 +313,7 @@ lock_held_by_current_thread (const struct lock *lock)
 {
   ASSERT (lock != NULL);
 
-  return lock->holder == thread_current ();
+  return lock->holder == thread_current();
 }
 
 /* One semaphore in a list. */
